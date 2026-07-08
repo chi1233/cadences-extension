@@ -20,6 +20,8 @@ from analysis import (
     hourly_artifact_share,
     token_depth_by_group,
     peak_hour_by_type,
+    test_weekday_weekend_shift,
+    decompose_token_gap,
 )
 from plotting import (
     plot_wage_quartile_stack,
@@ -63,6 +65,12 @@ def main():
     peaks = peak_hour_by_type(hourly, ["code", "explanation", "document"])
     peaks.to_csv(os.path.join(OUT_DIR, "peak_hours_by_type.csv"), index=False)
 
+    shift_test = test_weekday_weekend_shift(df, ["code", "explanation", "document", "guidance"])
+    shift_test.to_csv(os.path.join(OUT_DIR, "weekday_weekend_shift_test.csv"), index=False)
+
+    gap = decompose_token_gap(df, low_group="Q1", high_group="Q4")
+    pd.DataFrame([gap]).to_csv(os.path.join(OUT_DIR, "token_gap_decomposition_q1_q4.csv"), index=False)
+
     # Q3 (optional): token depth by artifact type x wage quartile
     token_depth = token_depth_by_group(df, ["artifact_type_norm", "wage_quartile"])
     wage_lookup = df.groupby("wage_quartile", observed=True)["median_hourly_wage"].mean()
@@ -74,6 +82,11 @@ def main():
     print(wage_mix_with_entropy.round(3))
     print("\n=== Peak hours by artifact type (weekday vs weekend) ===")
     print(peaks)
+    print("\n=== Weekday vs weekend hourly-shape chi-square test ===")
+    print(shift_test.round(4))
+    print("\n=== Q1 -> Q4 mean-token gap decomposition ===")
+    for k, v in gap.items():
+        print(f"  {k}: {v:.3f}" if isinstance(v, float) else f"  {k}: {v}")
 
     # 4. Figures
     f1 = plot_wage_quartile_stack(wage_mix)

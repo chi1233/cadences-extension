@@ -52,7 +52,11 @@ def compute_entropy(
     probs = shares.values
     probs = np.where(probs > 0, probs, np.nan)
     entropy = -np.nansum(probs * np.log2(probs), axis=1)
-    return pd.DataFrame({"entropy_bits": entropy}, index=shares.index)
+    max_entropy = np.log2(shares.shape[1])
+    return pd.DataFrame(
+        {"entropy_bits": entropy, "entropy_normalized": entropy / max_entropy},
+        index=shares.index,
+    )
 
 
 def hourly_artifact_share(
@@ -139,3 +143,114 @@ def peak_hour_by_type(
                 }
             )
     return pd.DataFrame(rows)
+
+
+def test_weekday_weekend_shift(
+    df: pd.DataFrame,
+    artifact_types: list[str],
+    artifact_col: str = "artifact_type_norm",
+    hour_col: str = "hour",
+    weekend_col: str = "is_weekend",
+) -> pd.DataFrame:
+    """Chi-square test of whether the hourly distribution shape differs
+    between weekday and weekend for each artifact type.
+
+    This tests the full 24-hour shape (via a 2 x 24 contingency table of
+    weekday/weekend counts by hour), not just whether the single peak hour
+    moved, so it is a stronger test of "does this artifact type's daily
+    rhythm actually shift on weekends" than comparing peak_hour_by_type
+    outputs alone.
+
+    Args:
+        df: conversation-level DataFrame.
+        artifact_types: artifact type labels to test.
+        artifact_col: normalized artifact-type column.
+        hour_col: hour-of-day column (0-23).
+        weekend_col: boolean weekend-flag column.
+
+    Returns:
+        DataFrame with columns [artifact_type, n_weekday, n_weekend,
+        chi2, dof, p_value].
+    """
+    from scipy.stats import chi2_contingency
+
+    rows = []
+    for atype in artifact_types:
+        sub = df[df[artifact_col] == atype]
+        table = pd.crosstab(sub[weekend_col], sub[hour_col])
+        # Ensure both weekday and weekend rows are present and all 24 hour
+        # columns exist, filling any missing hour with 0 counts.
+        table = table.reindex(columns=range(24), fill_value=0)
+        table = table.reindex(index=[False, True], fill_value=0)
+        chi2, p_value, dof, _ = chi2_contingency(table.values)
+        rows.append(
+            {
+                "artifact_type": atype,
+                "n_weekday": int(table.loc[False].sum()),
+                "n_weekend": int(table.loc[True].sum()),
+                "chi2": chi2,
+                "dof": dof,
+                "p_value": p_value,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def decompose_token_gap(
+    df: pd.DataFrame,
+    low_group,
+    high_group,
+    group_col: str = "wage_quartile",
+    artifact_col: str = "artifact_type_norm",
+    token_col: str = "tokens_total",
+) -> dict:
+    """Oaxaca-style decomposition of the mean-token gap between two groups
+    into a composition effect (different artifact-type mix) and a within-type
+    effect (different token depth conditional on artifact type).
+
+    total_gap = mean_tokens(high_group) - mean_tokens(low_group)
+    composition_effect = sum_type[(share_high - share_low) * tokens_low]
+    within_type_effect  = sum_type[share_high * (tokens_high - tokens_low)]
+    total_gap == composition_effect + within_type_effect (exactly, by construction)
+
+    Args:
+        df: conversation-level DataFrame.
+        low_group: value of group_col identifying the reference group (e.g. "Q1").
+        high_group: value of group_col identifying the comparison group (e.g. "Q4").
+        group_col: grouping column, e.g. "wage_quartile".
+        artifact_col: normalized artifact-type column.
+        token_col: token-count column.
+
+    Returns:
+        Dict with keys: total_gap, composition_effect, within_type_effect,
+        composition_share (fraction of the gap explained by composition),
+        low_mean, high_mean.
+    """
+    low = df[df[group_col] == low_group]
+    high = df[df[group_col] == high_group]
+
+    share_low = low[artifact_col].value_counts(normalize=True)
+    share_high = high[artifact_col].value_counts(normalize=True)
+    tokens_low = low.groupby(artifact_col, observed=True)[token_col].mean()
+    tokens_high = high.groupby(artifact_col, observed=True)[token_col].mean()
+
+    all_types = sorted(set(share_low.index) | set(share_high.index))
+    share_low = share_low.reindex(all_types, fill_value=0.0)
+    share_high = share_high.reindex(all_types, fill_value=0.0)
+    tokens_low = tokens_low.reindex(all_types, fill_value=0.0)
+    tokens_high = tokens_high.reindex(all_types, fill_value=0.0)
+
+    composition_effect = float(((share_high - share_low) * tokens_low).sum())
+    within_type_effect = float((share_high * (tokens_high - tokens_low)).sum())
+    low_mean = float(low[token_col].mean())
+    high_mean = float(high[token_col].mean())
+    total_gap = high_mean - low_mean
+
+    return {
+        "low_mean": low_mean,
+        "high_mean": high_mean,
+        "total_gap": total_gap,
+        "composition_effect": composition_effect,
+        "within_type_effect": within_type_effect,
+        "composition_share": composition_effect / total_gap if total_gap else float("nan"),
+    }

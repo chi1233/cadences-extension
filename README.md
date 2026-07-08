@@ -7,17 +7,33 @@ the June 26, 2026 Anthropic Economic Index report, *Cadences*.
 
 ```
 economic_index_cadences/
+  .github/workflows/run-analysis.yml  CI: installs deps, runs the pipeline, uploads figures/CSVs as artifacts
   src/
     data_loading.py   load_index_data, filter_cadences_window, synthetic fallback
     features.py        assign_wage_quartile, extract_time_features, normalize_artifact_type
-    analysis.py         artifact_mix_by_group, compute_entropy, hourly_artifact_share,
-                          token_depth_by_group, peak_hour_by_type
+    analysis.py         artifact_mix_by_group, compute_entropy (raw + normalized), hourly_artifact_share,
+                          token_depth_by_group, peak_hour_by_type, test_weekday_weekend_shift,
+                          decompose_token_gap
     plotting.py          Figures 1-4
   run_analysis.py         end-to-end pipeline
   figures/                 PNG outputs
   outputs/                  CSV analysis tables
+  requirements.txt          pinned dependencies
   technical_note.md          2-3 page note draft
 ```
+
+## Statistical additions beyond the original spec
+
+- `test_weekday_weekend_shift`: chi-square test on the full 24-hour distribution shape (not just peak
+  hour) per artifact type, so the "temporal patterns differ by weekday/weekend" claim in the note is
+  backed by a p-value rather than an eyeballed peak-hour comparison.
+- `decompose_token_gap`: a standard two-part (Oaxaca-style) decomposition of the wage-quartile token
+  gap into a composition effect (different artifact-type mix) and a within-type effect (same artifact
+  type running longer at higher wages). This replaced an earlier draft of the note that asserted
+  composition "dominates," which turned out to be wrong once tested formally: composition explains
+  about 43% of the Q1-to-Q4 gap in this run, within-type effects about 57%.
+- `compute_entropy` now also returns `entropy_normalized` (entropy / max possible entropy for the
+  category count), which is the version worth comparing across groups.
 
 ## Data access
 

@@ -1,0 +1,8 @@
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+scipy>=1.10
+
+# Optional: only needed if load_index_data() pulls from the real
+# Hugging Face Hub instead of falling back to synthetic data.
+# datasets>=2.19
