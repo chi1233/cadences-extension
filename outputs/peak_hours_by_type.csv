@@ -1,0 +1,7 @@
+artifact_type,is_weekend,peak_hour,peak_share
+code,False,15,0.22568306010928962
+code,True,18,0.14712153518123666
+explanation,False,21,0.27637721755368816
+explanation,True,6,0.297008547008547
+document,False,12,0.2105561861520999
+document,True,10,0.1777301927194861
